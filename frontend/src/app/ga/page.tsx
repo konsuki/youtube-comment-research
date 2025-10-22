@@ -1,54 +1,40 @@
-// app/ga/page.tsx
 'use client'; 
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import MazeGrid from '@/components/ga/MazeGrid';
-import { START_POS, Coordinate } from '@/constants/maze';
-import { POPULATION_SIZE, CHROMOSOME_LENGTH } from '@/constants/ga';
-import { 
-    Chromosome, 
-    generateInitialPopulation, 
-    simulateAgentMovement,
-    SimulationResult,
-    calculateFitness
-} from '@/utils/gaFunctions';
+import { useGeneticAlgorithm } from '../../hooks/ga/useGeneticAlgorithm'; // 新しいフックをインポート
+import { Coordinate } from '@/constants/maze';
+import { MAX_GENERATIONS } from '@/constants/ga';
 
 // アニメーション速度 (ミリ秒)
-const ANIMATION_SPEED_MS = 150; 
+const ANIMATION_SPEED_MS = 100; 
 
 export default function GAPage() {
-  const [population, setPopulation] = useState<Chromosome[]>([]);
-  const [generation, setGeneration] = useState(0);
-  
-  // アニメーション関連の状態
-  const [simulationPath, setSimulationPath] = useState<Coordinate[]>([]);
+  const {
+    currentGeneration,
+    isRunning,
+    isFinished,
+    startGA,
+    stopGA,
+    resetGA,
+    bestIndividual,
+    bestPathResult, // 最良個体のシミュレーション結果
+    log,
+  } = useGeneticAlgorithm();
+
+  // --- アニメーション制御 ---
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
-  const [simulationRunning, setSimulationRunning] = useState(false);
+  const [animationRunning, setAnimationRunning] = useState(false);
   
-  // エージェントの現在の位置 (アニメーション中に動く)
-  const agentPos: Coordinate = simulationPath[currentStepIndex] || START_POS;
-
-  // 初回ロード時に初期集団を生成
-  useEffect(() => {
-    const initialPop = generateInitialPopulation();
-    setPopulation(initialPop);
-    setGeneration(1);
-    
-    // 動作確認のため、最初の個体をシミュレーションする
-    if (initialPop.length > 0) {
-        const firstChromosome = initialPop[1];
-        const result = simulateAgentMovement(firstChromosome);
-        setSimulationPath(result.path);
-    }
-  }, []);
-
+  const path = bestPathResult?.path || [];
+  const agentPos: Coordinate = path[currentStepIndex] || bestPathResult?.finalPosition || { y: -1, x: -1 };
+  
   // アニメーション実行ロジック
   useEffect(() => {
-    if (!simulationRunning || simulationPath.length === 0) return;
+    if (!animationRunning || path.length === 0) return;
 
-    // パスを最後まで辿ったらリセット
-    if (currentStepIndex >= simulationPath.length - 1) {
-      setSimulationRunning(false);
+    if (currentStepIndex >= path.length - 1) {
+      setAnimationRunning(false);
       return;
     }
 
@@ -56,73 +42,106 @@ export default function GAPage() {
       setCurrentStepIndex((prevIndex) => prevIndex + 1);
     }, ANIMATION_SPEED_MS);
 
-    return () => clearTimeout(timer); // クリーンアップ
-  }, [simulationRunning, currentStepIndex, simulationPath]);
+    return () => clearTimeout(timer);
+  }, [animationRunning, currentStepIndex, path]);
 
-  const startSimulation = useCallback(() => {
-    if (simulationPath.length > 0) {
+  const startAnimation = useCallback(() => {
+    if (path.length > 0) {
       setCurrentStepIndex(0);
-      setSimulationRunning(true);
+      setAnimationRunning(true);
     }
-  }, [simulationPath]);
+  }, [path]);
 
-  // 最初の個体に関する情報
-  const firstChromosome = population[0];
-  const firstIndividualResult: SimulationResult | null = firstChromosome 
-    ? simulateAgentMovement(firstChromosome) : null;
-    
-  const firstIndividualFitness = firstIndividualResult 
-    ? calculateFitness(firstIndividualResult) : 0;
-
+  // GAが更新された際、アニメーションをリセット
+  useEffect(() => {
+    setCurrentStepIndex(0);
+  }, [bestIndividual]);
 
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col items-center p-8">
       <h1 className="text-4xl font-extrabold mb-8 text-gray-900">
-        GA 迷路ソルバー (初期集団確認)
+        GA 迷路ソルバー
       </h1>
 
-      <div className="flex space-x-12">
-        {/* 迷路表示エリア */}
-        <div className="flex-shrink-0">
-          <h2 className="text-xl font-semibold mb-3 text-center">迷路マップ</h2>
-          <MazeGrid agentPosition={agentPos} />
-          
-          <button 
-            onClick={startSimulation}
-            disabled={simulationRunning || simulationPath.length === 0}
-            className="mt-4 w-full py-2 px-4 bg-blue-600 text-white font-bold rounded hover:bg-blue-700 disabled:bg-gray-400 transition"
-          >
-            {simulationRunning ? '実行中...' : 'シミュレーション開始'}
-          </button>
-          
-          <p className="mt-2 text-sm text-center text-gray-600">
-            {simulationRunning ? `ステップ: ${currentStepIndex}/${simulationPath.length - 1}` : '準備完了'}
-          </p>
+      <div className="flex space-x-12 w-full max-w-6xl">
+        
+        {/* 左: 制御パネルとログ */}
+        <div className="w-1/3 flex flex-col space-y-6">
+          <div className="bg-white p-6 rounded-lg shadow-xl">
+            <h2 className="text-2xl font-bold mb-4 border-b pb-2">GA 制御</h2>
+            <div className="flex space-x-3 mb-4">
+              <button 
+                onClick={isRunning ? stopGA : startGA}
+                disabled={isFinished && !isRunning}
+                className={`py-2 px-4 font-bold rounded transition ${
+                  isRunning 
+                    ? 'bg-red-500 hover:bg-red-600 text-white' 
+                    : 'bg-green-500 hover:bg-green-600 text-white'
+                }`}
+              >
+                {isRunning ? '停止' : isFinished ? '再実行' : '開始'}
+              </button>
+              <button 
+                onClick={resetGA}
+                className="py-2 px-4 bg-gray-300 hover:bg-gray-400 rounded transition"
+              >
+                リセット
+              </button>
+            </div>
+            
+            <p className="text-lg"><strong>世代:</strong> <span className="font-mono text-blue-600">{currentGeneration} / {MAX_GENERATIONS}</span></p>
+            <p className="text-lg"><strong>状態:</strong> 
+              {isFinished ? '✅ 完了' : isRunning ? '▶️ 実行中' : '⏸️ 待機中'}
+            </p>
+          </div>
+
+          <div className="bg-white p-6 rounded-lg shadow-xl flex-grow overflow-y-auto max-h-96">
+            <h3 className="text-xl font-semibold mb-2">GA ログ</h3>
+            <div className="space-y-1 text-sm font-mono text-gray-700">
+              {log.slice(-10).map((entry, index) => (
+                <p key={index} className={entry.startsWith('✅') ? 'text-green-600 font-bold' : ''}>{entry}</p>
+              ))}
+            </div>
+          </div>
         </div>
 
-        {/* GA情報表示エリア */}
-        <div className="w-96 bg-white p-6 rounded-lg shadow-xl">
-          <h2 className="text-2xl font-bold mb-4 border-b pb-2">初期集団 情報</h2>
+        {/* 中央: 迷路マップとアニメーション制御 */}
+        <div className="w-1/3 flex flex-col items-center">
+          <h2 className="text-xl font-semibold mb-3">迷路マップ</h2>
+          <MazeGrid agentPosition={agentPos} />
           
-          <div className="space-y-3 text-lg">
-            <p><strong>世代:</strong> <span className="font-mono text-blue-600">{generation}</span></p>
-            <p><strong>集団サイズ:</strong> <span className="font-mono">{POPULATION_SIZE}</span></p>
-            <p><strong>染色体長:</strong> <span className="font-mono">{CHROMOSOME_LENGTH}</span> ビット</p>
+          <div className="mt-6 w-full p-4 bg-white rounded-lg shadow">
+            <h3 className="text-xl font-semibold mb-2">アニメーション制御</h3>
+            <button 
+              onClick={startAnimation}
+              disabled={animationRunning || !bestPathResult}
+              className="w-full py-2 px-4 bg-purple-600 text-white font-bold rounded hover:bg-purple-700 disabled:bg-gray-400 transition"
+            >
+              {animationRunning ? '再生中...' : '最良個体のパスを再生'}
+            </button>
+            <p className="mt-2 text-sm text-center text-gray-600">
+              ステップ: {currentStepIndex} / {path.length - 1}
+            </p>
           </div>
-          
-          {firstIndividualResult && (
-            <div className="mt-6 border-t pt-3">
-              <h3 className="text-xl font-semibold mb-2">最優秀（仮）個体</h3>
-              <p><strong>適応度:</strong> <span className="font-bold text-green-700">{firstIndividualFitness.toFixed(2)}</span></p>
-              <p><strong>最終位置:</strong> ({firstIndividualResult.finalPosition.y}, {firstIndividualResult.finalPosition.x})</p>
-              <p><strong>ゴール到達:</strong> {firstIndividualResult.reachedGoal ? '✅ YES' : '❌ NO'}</p>
-              <p><strong>実行ステップ数:</strong> {firstIndividualResult.stepsTaken}</p>
+        </div>
 
-              <h4 className="mt-3 text-md font-medium">行動パターン (一部)</h4>
-              <div className="bg-gray-100 p-3 rounded text-xs break-all font-mono">
-                🧬 {firstChromosome.slice(0, 50).join('')}...
+        {/* 右: 最良個体情報 */}
+        <div className="w-1/3 bg-white p-6 rounded-lg shadow-xl">
+          <h2 className="text-2xl font-bold mb-4 border-b pb-2">最良個体情報</h2>
+          {bestIndividual ? (
+            <>
+              <p className="text-lg"><strong>適応度:</strong> <span className="font-bold text-green-700">{bestIndividual.fitness.toFixed(2)}</span></p>
+              <p className="text-lg"><strong>ゴール到達:</strong> {bestIndividual.result.reachedGoal ? '✅ YES' : '❌ NO'}</p>
+              <p className="text-lg"><strong>実行ステップ:</strong> {bestIndividual.result.stepsTaken}</p>
+              <p className="text-lg"><strong>最終位置:</strong> ({bestIndividual.result.finalPosition.y}, {bestIndividual.result.finalPosition.x})</p>
+              
+              <h4 className="mt-4 text-md font-medium border-t pt-3">行動パターン (一部)</h4>
+              <div className="bg-gray-100 p-3 rounded text-xs break-all font-mono max-h-32 overflow-y-auto">
+                🧬 {bestIndividual.chromosome.slice(0, 100).join('')}
               </div>
-            </div>
+            </>
+          ) : (
+            <p>GAを開始してください。</p>
           )}
         </div>
       </div>
