@@ -1,8 +1,10 @@
+// app/ga/page.tsx
 'use client'; 
 
 import { useState, useEffect, useCallback } from 'react';
 import MazeGrid from '@/components/ga/MazeGrid';
-import { useGeneticAlgorithm } from '../../hooks/ga/useGeneticAlgorithm'; // 新しいフックをインポート
+import SettingsPanel from '@/components/ga/SettingsPanel'; 
+import { useGeneticAlgorithm } from '../../hooks/ga/useGeneticAlgorithm'; // GAのロジックを管理するカスタムフック
 import { Coordinate } from '@/constants/maze';
 import { MAX_GENERATIONS } from '@/constants/ga';
 
@@ -18,21 +20,33 @@ export default function GAPage() {
     stopGA,
     resetGA,
     bestIndividual,
-    bestPathResult, // 最良個体のシミュレーション結果
+    bestPathResult,
     log,
   } = useGeneticAlgorithm();
-
+  
+  // 新しい迷路が生成されたときにMazeGridを再描画するためのキー
+  const [mazeKey, setMazeKey] = useState(0); 
+  
+  // SettingsPanelから呼ばれるコールバック
+  const handleMazeChange = useCallback(() => {
+    // グローバルな MAZE_MAP が変更されたらキーを更新し、MazeGridを強制再描画
+    // このキーが変わることで、MazeGridは新しい MAZE_MAP の値を使用して描画される
+    setMazeKey(prev => prev + 1); 
+  }, []);
+  
   // --- アニメーション制御 ---
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [animationRunning, setAnimationRunning] = useState(false);
   
   const path = bestPathResult?.path || [];
+  // エージェントの位置: アニメーション中はそのステップの位置、停止中は最終位置
   const agentPos: Coordinate = path[currentStepIndex] || bestPathResult?.finalPosition || { y: -1, x: -1 };
   
   // アニメーション実行ロジック
   useEffect(() => {
     if (!animationRunning || path.length === 0) return;
 
+    // パスを最後まで辿ったら停止
     if (currentStepIndex >= path.length - 1) {
       setAnimationRunning(false);
       return;
@@ -52,10 +66,11 @@ export default function GAPage() {
     }
   }, [path]);
 
-  // GAが更新された際、アニメーションをリセット
+  // GAが更新された際（新しい最良個体が現れた際）、アニメーションをリセット
   useEffect(() => {
     setCurrentStepIndex(0);
   }, [bestIndividual]);
+
 
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col items-center p-8">
@@ -63,10 +78,14 @@ export default function GAPage() {
         GA 迷路ソルバー
       </h1>
 
-      <div className="flex space-x-12 w-full max-w-6xl">
+      <div className="flex space-x-12 w-full">
         
         {/* 左: 制御パネルとログ */}
         <div className="w-1/3 flex flex-col space-y-6">
+          
+          {/* 設定パネル */}
+          <SettingsPanel onMazeChange={handleMazeChange} />
+          
           <div className="bg-white p-6 rounded-lg shadow-xl">
             <h2 className="text-2xl font-bold mb-4 border-b pb-2">GA 制御</h2>
             <div className="flex space-x-3 mb-4">
@@ -98,6 +117,7 @@ export default function GAPage() {
           <div className="bg-white p-6 rounded-lg shadow-xl flex-grow overflow-y-auto max-h-96">
             <h3 className="text-xl font-semibold mb-2">GA ログ</h3>
             <div className="space-y-1 text-sm font-mono text-gray-700">
+              {/* 最新のログ10件を表示 */}
               {log.slice(-10).map((entry, index) => (
                 <p key={index} className={entry.startsWith('✅') ? 'text-green-600 font-bold' : ''}>{entry}</p>
               ))}
@@ -108,7 +128,8 @@ export default function GAPage() {
         {/* 中央: 迷路マップとアニメーション制御 */}
         <div className="w-1/3 flex flex-col items-center">
           <h2 className="text-xl font-semibold mb-3">迷路マップ</h2>
-          <MazeGrid agentPosition={agentPos} />
+          {/* key を設定し、迷路変更時に強制再描画 */}
+          <MazeGrid key={mazeKey} agentPosition={agentPos} />
           
           <div className="mt-6 w-full p-4 bg-white rounded-lg shadow">
             <h3 className="text-xl font-semibold mb-2">アニメーション制御</h3>
@@ -120,7 +141,7 @@ export default function GAPage() {
               {animationRunning ? '再生中...' : '最良個体のパスを再生'}
             </button>
             <p className="mt-2 text-sm text-center text-gray-600">
-              ステップ: {currentStepIndex} / {path.length - 1}
+              ステップ: {currentStepIndex} / {path.length > 0 ? path.length - 1 : 0}
             </p>
           </div>
         </div>

@@ -8,7 +8,7 @@ export const MUTATION_RATE = 0.05;  // 突然変異の確率 (5%)
 // --- 2. 染色体と行動の定義 ---
 
 // エージェントが迷路内で実行できる最大の行動回数
-export const ACTIONS_PER_AGENT = 50; 
+export const ACTIONS_PER_AGENT = 400; 
 
 // 1行動あたり2ビットを使用するため、染色体の長さは 50 * 2 = 100
 export const BITS_PER_ACTION = 2;
