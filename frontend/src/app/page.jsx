@@ -1,30 +1,68 @@
+// Client Component
 'use client';
 
-import React from 'react';
-import { useApiData } from '../hooks/useApiData'; 
-import { LoadingAndErrorDisplay } from '../components/LoadingAndErrorDisplay';
+import { useState, useEffect } from 'react';
 import { CommentDisplay } from '../components/CommentDisplay';
+import { CommentSearch } from '../components/CommentSearch'; // 新しくインポート
+
+// FastAPIのURLを定義
+const YOUTUBE_API_URL = 'http://localhost:8000/api/comments';
 
 export default function Home() {
-  const { apiData, loading, error } = useApiData();
-  const showComments = apiData && apiData.status === "success" && !loading && !error;
+  const [apiData, setApiData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [searchResult, setSearchResult] = useState(null); // Gemini検索結果を格納
+
+  // YouTubeコメントを取得する関数
+  const fetchComments = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      // YouTubeコメント取得APIを呼び出す
+      const response = await fetch(YOUTUBE_API_URL);
+      const data = await response.json();
+
+      if (data.status === 'error') {
+        setError(data.message || 'コメント取得中にエラーが発生しました。');
+      } else {
+        setApiData(data);
+      }
+    } catch (e) {
+      console.error('API呼び出しエラー:', e);
+      setError('ネットワークエラーまたはAPI接続に失敗しました。');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchComments();
+  }, []);
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-8 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white">
-      <h1 className="text-4xl font-extrabold mb-8 text-indigo-600 dark:text-indigo-400">Python API連携デモ</h1>      
-      <div className="p-8 bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-[80%] max-w-4xl border border-gray-200 dark:border-gray-700 transition-all duration-300">
-        <h2 className="text-2xl font-semibold mb-4 border-b pb-2 text-gray-700 dark:text-gray-200">
-          YouTubeコメントデータ
-        </h2>
-        <LoadingAndErrorDisplay 
-          loading={loading} 
-          error={error} 
+    <div className="container mx-auto p-4 md:p-8">
+      <h1 className="text-3xl font-bold mb-6 text-gray-900 dark:text-gray-50">
+        YouTubeコメント分析ツール (Gemini連携)
+      </h1>
+
+      {/* 1. データのロード/エラー表示 */}
+      {loading && <p className="text-blue-500">コメントを取得中...</p>}
+      {error && <p className="text-red-500">{error}</p>}
+      
+      {/* 2. 検索コンポーネント (YouTubeコメント取得後のみ表示) */}
+      {apiData && apiData.status === 'success' && apiData.comments && (
+        <CommentSearch
+          comments={apiData.comments}
+          onSearchResult={setSearchResult} // 検索結果をstateにセット
         />
-        {showComments && <CommentDisplay apiData={apiData} />}        
-        {!loading && !error && apiData && apiData.status === "error" && (
-            <CommentDisplay apiData={apiData} />
-        )}
-      </div>
+      )}
+
+      {/* 3. コメント表示コンポーネント */}
+      <CommentDisplay 
+        apiData={apiData} 
+        searchResultJson={searchResult} // 検索結果を渡す
+      />
     </div>
   );
 }
